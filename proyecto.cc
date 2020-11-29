@@ -60,21 +60,17 @@ Parámetros de consola que pueden personalizar la ejecucion del programa
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("Proyecto");
+//DEfinicion de parametros que se pueden modificar por consola
 uint32_t packetSize; // bytes
 uint32_t numPackets;
 uint32_t numNodes;
+uint32_t pool_size;
+uint32_t num_keys_node;
 double x_limit;
 double y_limit;
 double interval;
 
-//Definición de colores para nodos
-uint8_t black_r = 0;
-uint8_t black_g = 0;
-uint8_t black_b = 0;
 
-uint8_t blue_r = 30;
-uint8_t blue_g = 144;
-uint8_t blue_b = 255;
 
 
 static void GenerateTraffic (Ptr<Socket> socket, uint32_t pktSize,
@@ -106,19 +102,8 @@ void ReceivePacket (Ptr<Socket> socket)
 int main (int argc, char *argv[])
 {
     //DEfinicion de sistema de logs que se usara
-    NS_LOG_INFO("CREATING NODES.");
     LogComponentEnable("Proyecto", LOG_LEVEL_INFO);
 
-    
-
-    for (uint32_t i = 0; i < 15; i++)
-    {
-      std::string key = generateKey(10, i);
-      NS_LOG_INFO("MAIN: "<< key);
-
-    }
-    
-  
     //Definicion de valores por defecto de variables que se pueden modificar como parametros del
     //programa
     packetSize = 1000; // bytes
@@ -127,7 +112,9 @@ int main (int argc, char *argv[])
     x_limit = 100;
     y_limit = 100;
     interval = 1.0; // seconds
-  
+    pool_size = 100;
+    num_keys_node = 15;
+
     //Configuracion de parametros de programa que se podran ingresar mediante ./waf ...taller --<par> = valor
     
     CommandLine cmd;
@@ -137,11 +124,27 @@ int main (int argc, char *argv[])
     cmd.AddValue ("numNodesNetOne", "number of nodes for main network", numNodes);
     cmd.AddValue ("x_limit", "width of rectangle where nodes are going to be placed", x_limit);
     cmd.AddValue ("y_limit", "height of rectangle where nodes are going to be placed", y_limit);
+    cmd.AddValue ("pool_size", "Number P of keys that form the key pool", pool_size);
+    cmd.AddValue ("num_keys_node", "Number P of keys that form the key pool", num_keys_node);
     cmd.Parse (argc, argv);
 
 
     Time interPacketInterval = Seconds (interval);
 
+    ///////////////////////////////////////////////////////////////////////////
+  //                                                                         //
+  //                            PASOS PREVIOS                               //
+  //                                                                       //
+  ///////////////////////////////////////////////////////////////////////////
+
+    //Se genera el pool de llaves
+    NS_LOG_INFO("GENERATING POOL.");
+    std::vector<std::string> pool = generatePool(pool_size);
+
+    //EN un vector se guardan las k llaves que le corresponden a cada nodo
+    std::vector<std::vector<std::string>> NodeKeys(numNodes);
+
+    NS_LOG_INFO("CREATING NODES.");
     //Creacion de la red
     NodeContainer nodeContainer;
     nodeContainer.Create(numNodes);

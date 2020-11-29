@@ -4,6 +4,7 @@
 #include <ctime>
 #include <unistd.h>
 
+
 std::string generateKey(const int len, const int seed) {
     
     std::string tmp_s;
@@ -20,7 +21,18 @@ std::string generateKey(const int len, const int seed) {
         tmp_s += alphanum[rand() % (sizeof(alphanum) - 1)];
     
     
-    return tmp_s;
-    
+    return tmp_s;   
 }
+
+std::vector<std::string> generatePool(const int pool_size){
+
+    std::vector<std::string> pool (pool_size);
+    for (int i = 0; i < pool_size; i++)
+    {
+        pool[i] = generateKey(10, i);
+    }
+    return pool;
+}
+
+
 #endif
