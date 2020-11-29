@@ -55,6 +55,7 @@ Parámetros de consola que pueden personalizar la ejecucion del programa
 #include "ns3/packet-sink-helper.h"
 #include "ns3/csma-helper.h"
 #include "ns3/netanim-module.h"
+#include "key_generator.h"
 
 using namespace ns3;
 
@@ -62,9 +63,9 @@ NS_LOG_COMPONENT_DEFINE ("Proyecto");
 uint32_t packetSize; // bytes
 uint32_t numPackets;
 uint32_t numNodes;
-double x_coord;
-double y_coord;
-double distance;
+double x_limit;
+double y_limit;
+double interval;
 
 //Definición de colores para nodos
 uint8_t black_r = 0;
@@ -110,27 +111,36 @@ int main (int argc, char *argv[])
 
     
 
-    
+    for (uint32_t i = 0; i < 15; i++)
+    {
+      std::string key = generateKey(10, i);
+      NS_LOG_INFO("MAIN: "<< key);
 
+    }
+    
+  
     //Definicion de valores por defecto de variables que se pueden modificar como parametros del
     //programa
     packetSize = 1000; // bytes
     numPackets = 10;
-    numNodes = 10;
-    x_coord = 70.0;
-    y_coord = 20.0;
-    distance = 10.0;
-    
+    numNodes = 60;
+    x_limit = 100;
+    y_limit = 100;
+    interval = 1.0; // seconds
+  
     //Configuracion de parametros de programa que se podran ingresar mediante ./waf ...taller --<par> = valor
     
     CommandLine cmd;
     cmd.AddValue ("packetSize", "size of application packet sent", packetSize);
     cmd.AddValue ("numPackets", "number of packets generated", numPackets);
+    cmd.AddValue ("interval", "seconds betwen one package and another", interval);
     cmd.AddValue ("numNodesNetOne", "number of nodes for main network", numNodes);
-    cmd.AddValue ("x_coord", "X coordinate of first node of main net", x_coord);
-    cmd.AddValue ("y_coord", "Y coordinate of first node of main net", y_coord);
-    cmd.AddValue ("distance", "distances that separates nodes in main net", distance);
+    cmd.AddValue ("x_limit", "width of rectangle where nodes are going to be placed", x_limit);
+    cmd.AddValue ("y_limit", "height of rectangle where nodes are going to be placed", y_limit);
     cmd.Parse (argc, argv);
+
+
+    Time interPacketInterval = Seconds (interval);
 
     //Creacion de la red
     NodeContainer nodeContainer;
@@ -150,7 +160,7 @@ int main (int argc, char *argv[])
     //Intalacion de pila de protocolos a los dispositivos de red
     InternetStackHelper internet;
     internet.Install (nodeContainer);
-
+    
     //Asignacion de direcciones ip
     NS_LOG_INFO ("MAIN:setting up ip adresses on all nodes");
     Ipv4AddressHelper ipAddrs;
@@ -160,21 +170,43 @@ int main (int argc, char *argv[])
 
 
     
-    //La red adhoc es movil, por lo tanto se definen atributos de movilidad a los nodos
+    //La red de sensores no tiene movilidad, simplemente se configura cada nodo en una posición
+    //aleatoria dentro de un rectangulo definido por x_limit y y_limit
     MobilityHelper mobility;
+
+    std::stringstream x_rand;
+    x_rand << "ns3::UniformRandomVariable[Min=0.0|Max=" << x_limit << "]";
+
+    std::stringstream y_rand;
+    y_rand << "ns3::UniformRandomVariable[Min=0.0|Max=" << y_limit << "]";
+
     //Primero se define la posicion de cada nodo en una grilla
-    mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
-                                    "MinX", DoubleValue (x_coord),//Cordenada inicial en x
-                                    "MinY", DoubleValue (y_coord),//Cordenada inicial en Y
-                                    "DeltaX", DoubleValue (distance),//Distancia horizontal entre nodos
-                                    "DeltaY", DoubleValue (distance),//Distancia vertical entre nodos
-                                    "GridWidth", UintegerValue (5),
-                                    "LayoutType", StringValue ("RowFirst"));
+    mobility.SetPositionAllocator ("ns3::RandomRectanglePositionAllocator",
+                                    "X", StringValue (x_rand.str()),//Cordenada inicial en x
+                                    "Y", StringValue (y_rand.str())//Cordenada inicial en Y
+                                    );
     mobility.Install (nodeContainer);
 
    
   
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  //UN nodo va a estar escuchando en el puerto 80
+  Ptr<Socket> destiny = Socket::CreateSocket (nodeContainer.Get (0), tid);
+  InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
+  destiny->Bind (local);
+  destiny->SetRecvCallback (MakeCallback (&ReceivePacket));
 
+
+
+  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (9), tid);
+  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.50"), 80);
+  source->SetAllowBroadcast (true);
+  source->Connect (remote);
+
+
+  Simulator::ScheduleWithContext (source->GetNode ()->GetId (),
+                                  Seconds (1.0), &GenerateTraffic,
+                                  source, packetSize, numPackets, interPacketInterval);
   Simulator::Stop (Seconds (30));
 
   AnimationInterface pAnim ("testProyecto.xml");
