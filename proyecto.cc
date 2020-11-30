@@ -97,32 +97,10 @@ double interval;
 
 
 
-static void GenerateTraffic (Ptr<Socket> socket, uint32_t pktSize,
-                             uint32_t pktCount, Time pktInterval )
-{
-  if (pktCount > 0)
-    {
-      socket->Send (Create<Packet> (pktSize));
-      Simulator::Schedule(pktInterval, &GenerateTraffic,
-                           socket, pktSize,pktCount - 1, pktInterval);
-    }
-  else
-    {
-      socket->Close ();
-    }
-}
 
-void ReceivePacket (Ptr<Socket> socket)
+void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny,std::string content)
 {
-  while (socket->Recv ())
-    {
-      NS_LOG_UNCOND ("Received one packet!");
-    }
-}
-
-void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny)
-{
-  std::ostringstream msg; msg << "Hello World!" << '\0';
+  std::ostringstream msg; msg << content << '\0';
   Ptr<Packet> p = Create<Packet> ((uint8_t*) msg.str().c_str(), msg.str().length()+1);
   p->AddPaddingAtEnd (100);
   sock->SendTo (p, 0, destiny);
@@ -131,6 +109,7 @@ void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny)
 
 void checkSharedKey (Ptr<Socket> socket)
 {
+  uint32_t id_of_reciving_node = socket->GetNode()->GetId();
   Address from;
   Ptr<Packet> packet = socket->RecvFrom (from);
   packet->RemoveAllPacketTags ();
@@ -138,9 +117,63 @@ void checkSharedKey (Ptr<Socket> socket)
   uint8_t *buffer = new uint8_t[packet->GetSize ()];
   packet->CopyData(buffer, packet->GetSize ());
   std::string s = std::string(buffer, buffer+packet->GetSize());
-  NS_LOG_INFO ("Source Received " << packet->GetSize () << " bytes from " << InetSocketAddress::ConvertFrom (from).GetIpv4 ());
-  NS_LOG_INFO ("Content " << s );
+  NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << InetSocketAddress::ConvertFrom (from).GetIpv4 ());
+  NS_LOG_INFO ("Message Received: " << s );
+
 }
+
+/*
+std::vector<std::string> decodeKeyIds(std::string codedKeys){
+
+  std::string delimiter = ",";
+
+  size_t pos = 0;
+  std::string token;
+  while ((pos = codedKeys.find(delimiter)) != std::string::npos) {
+      token = codedKeys.substr(0, pos);
+      std::cout << token << std::endl;
+      codedKeys.erase(0, pos + delimiter.length());
+  }
+  std::cout << codedKeys << std::endl;
+  
+}
+*/
+
+
+int getIndex(std::vector<std::string> v, std::string K)
+{
+    auto it = find(v.begin(), v.end(), K);
+ 
+    // If element was found
+    if (it != v.end()) 
+    {
+     
+        // calculating the index
+        // of K
+        int index = it - v.begin();
+        return index;
+    }
+    else {
+        // If the element is not
+        // present in the vector
+        return -1;
+    }
+}
+
+std::string encodeKeyIds(std::vector<std::string> pool, std::vector<std::string> nodeKeys){
+  std::string codedKeyIds;
+  for (size_t i = 0; i < nodeKeys.size(); i++)
+  {
+    codedKeyIds += std::to_string(getIndex(pool, nodeKeys[i]));
+    if(i < nodeKeys.size()-1)
+      codedKeyIds +=",";
+  }
+
+  std::cout << codedKeyIds << std::endl;
+  return codedKeyIds;
+  
+}
+
 
 
 
@@ -279,7 +312,9 @@ int main (int argc, char *argv[])
   source->SetAllowBroadcast (true);
   source->Connect (remote);
 
-  Simulator::Schedule (Seconds (0.1),&SendStuff, source, remote);
+  encodeKeyIds(pool, nodeKeys[0]);
+
+  Simulator::Schedule (Seconds (0.1),&SendStuff, source, remote, "this is just a test");
   Simulator::Stop (Seconds (30));
 
   AnimationInterface pAnim ("testProyecto.xml");
