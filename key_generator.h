@@ -70,6 +70,55 @@ std::vector<std::vector<std::string>> assignKeysToNodes(std::vector<std::string>
     return NodeKeys;
 }
 
+std::vector<std::string> decodeKeyIds(std::string codedKeys){
+
+  std::string delimiter = ",";
+  std::vector<std::string> nodeKeys;
+  size_t pos = 0;
+  std::string token;
+  while ((pos = codedKeys.find(delimiter)) != std::string::npos) {
+      token = codedKeys.substr(0, pos);
+      //std::cout << token << std::endl;
+      nodeKeys.push_back(token);
+      codedKeys.erase(0, pos + delimiter.length());
+  }
+  return nodeKeys;
+  
+}
+
+int getIndex(std::vector<std::string> v, std::string K)
+{
+    auto it = find(v.begin(), v.end(), K);
+ 
+    // If element was found
+    if (it != v.end()) 
+    {
+     
+        // calculating the index
+        // of K
+        int index = it - v.begin();
+        return index;
+    }
+    else {
+        // If the element is not
+        // present in the vector
+        return -1;
+    }
+}
+
+std::string encodeKeyIds(std::vector<std::string> pool, std::vector<std::string> nodeKeys){
+  std::string codedKeyIds;
+  for (size_t i = 0; i < nodeKeys.size(); i++)
+  {
+    codedKeyIds += std::to_string(getIndex(pool, nodeKeys[i]));
+    codedKeyIds +=",";
+  }
+
+  std::cout << codedKeyIds << std::endl;
+  return codedKeyIds;
+  
+}
+
 
 
 
