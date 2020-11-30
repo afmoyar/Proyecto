@@ -27,9 +27,11 @@ una cabeza de cluster, que se encarga de comunicar
 
 Parámetros de consola que pueden personalizar la ejecucion del programa
 
-./waf --run "scratch/taller --numPackets=10" --vis
-./waf --run "scratch/taller --numPackets=30 --numNodesNetTwo=20 --numNodesNetOne=15" --vis
-./waf --run "scratch/taller --numPackets=30 --main_distance=10 --two_distance=10 --three_distance=10" --vis
+./waf --run "scratch/proyecto --numPackets=10" --vis
+./waf --run "scratch/proyecto --numPackets=30 --numNodes=20" --vis
+./waf --run "scratch/proyecto --numPackets=30 --x_limit=10 --y_limit=10" --vis
+./waf --run "scratch/proyecto --numNodes=6 --pool_size=10 --num_keys_node=2" --vis
+
 
 */
 
@@ -121,7 +123,7 @@ int main (int argc, char *argv[])
     cmd.AddValue ("packetSize", "size of application packet sent", packetSize);
     cmd.AddValue ("numPackets", "number of packets generated", numPackets);
     cmd.AddValue ("interval", "seconds betwen one package and another", interval);
-    cmd.AddValue ("numNodesNetOne", "number of nodes for main network", numNodes);
+    cmd.AddValue ("numNodes", "number of nodes for main network", numNodes);
     cmd.AddValue ("x_limit", "width of rectangle where nodes are going to be placed", x_limit);
     cmd.AddValue ("y_limit", "height of rectangle where nodes are going to be placed", y_limit);
     cmd.AddValue ("pool_size", "Number P of keys that form the key pool", pool_size);
@@ -133,7 +135,7 @@ int main (int argc, char *argv[])
 
     ///////////////////////////////////////////////////////////////////////////
   //                                                                         //
-  //                            PASOS PREVIOS                               //
+  //                  FASE DE PRE DISTRIBUCIÓN DE LLAVES                    //
   //                                                                       //
   ///////////////////////////////////////////////////////////////////////////
 
@@ -141,13 +143,25 @@ int main (int argc, char *argv[])
     NS_LOG_INFO("GENERATING POOL.");
     std::vector<std::string> pool = generatePool(pool_size);
 
-    //EN un vector se guardan las k llaves que le corresponden a cada nodo
-    std::vector<std::vector<std::string>> NodeKeys(numNodes);
 
-    NS_LOG_INFO("CREATING NODES.");
+    //EN un vector se guardan las k llaves que le corresponden a cada nodo
+    std::vector<std::vector<std::string>> nodeKeys = assignKeysToNodes(pool,pool_size, numNodes, num_keys_node);
+
+    for (size_t i = 0; i < nodeKeys.size(); i++)
+    {
+      NS_LOG_INFO("Node 1: ");
+      for (size_t j = 0; j < nodeKeys[i].size(); j++)
+      {
+        NS_LOG_INFO(nodeKeys[i][j]);
+      }
+      
+    }
+    
     //Creacion de la red
+    NS_LOG_INFO("CREATING NODES.");
     NodeContainer nodeContainer;
     nodeContainer.Create(numNodes);
+
  
     //Intalacion de dispositivos de red wifi en modo adhoc, capa fisica y capa mac a los nodos
     WifiHelper wifi;
@@ -201,7 +215,7 @@ int main (int argc, char *argv[])
 
 
 
-  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (9), tid);
+  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (9 % (numNodes - 1)), tid);
   InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.50"), 80);
   source->SetAllowBroadcast (true);
   source->Connect (remote);
