@@ -114,7 +114,7 @@ std::string encodeKeyIds(std::vector<std::string> pool, std::vector<std::string>
     codedKeyIds +=",";
   }
 
-  std::cout << codedKeyIds << std::endl;
+  //std::cout << codedKeyIds << std::endl;
   return codedKeyIds;
   
 }

@@ -84,15 +84,22 @@ double x_limit;
 double y_limit;
 double interval;
 
+//Definicion de variables globales
+std::vector<std::vector<std::string>> nodeKeys;
+std::vector<std::string> pool;
+uint32_t direct_link_count = 0;
 
 
 
 
 void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny,std::string content)
 {
+  //Prepare message to send
   std::ostringstream msg; msg << content << '\0';
+  //Create packet
   Ptr<Packet> p = Create<Packet> ((uint8_t*) msg.str().c_str(), msg.str().length()+1);
   p->AddPaddingAtEnd (100);
+  //Send packet
   sock->SendTo (p, 0, destiny);
   return;
 }
@@ -103,24 +110,43 @@ void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny,std::string content)
 void checkSharedKey (Ptr<Socket> socket)
 {
   uint32_t id_of_reciving_node = socket->GetNode()->GetId();
+  //getting ip addres of sender node
   Address from;
   Ptr<Packet> packet = socket->RecvFrom (from);
+  //preparing received packet for data extraction
   packet->RemoveAllPacketTags ();
   packet->RemoveAllByteTags ();
+  //Extraction of packet content
   uint8_t *buffer = new uint8_t[packet->GetSize ()];
   packet->CopyData(buffer, packet->GetSize ());
   std::string pckContent = std::string(buffer, buffer+packet->GetSize());
   NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << InetSocketAddress::ConvertFrom (from).GetIpv4 ());
   NS_LOG_INFO ("Message Received: " << pckContent );
-  std::vector<std::string> nodeKeys = decodeKeyIds(pckContent);
-  /*
-  for (size_t i = 0; i < nodeKeys.size(); i++)
+  //contructing the keys received
+  std::vector<std::string> keyIdsRecvd = decodeKeyIds(pckContent);
+  //cheking for shared keys
+  for (size_t i = 0; i < keyIdsRecvd.size(); i++)
   {
-    std::cout<<nodeKeys[i]<<" ";
+    //std::cout<<keyIdsRecvd[i]<<" ";
+    std::string key = pool[i];
+    if(getIndex(nodeKeys[id_of_reciving_node],key)!=-1){
+      NS_LOG_INFO ("Direct link made: ");
+      direct_link_count++;
+      break;
+    }
   }
-  std::cout<<std::endl;
-  */
+  //std::cout<<std::endl;
+  std::cout<<direct_link_count<<std::endl;
+  
 
+}
+
+void discoveryPhaseResults(){
+
+  NS_LOG_INFO("************************************************************");
+  double totalEdges = (double)numNodes*(numNodes - 1)/(double)2;
+  NS_LOG_INFO("Of "<<totalEdges<<" direct links possible, "<<direct_link_count/2<<" where made");
+  NS_LOG_INFO("************************************************************");
 }
 
 
@@ -138,7 +164,7 @@ int main (int argc, char *argv[])
     x_limit = 100;
     y_limit = 100;
     interval = 1.0; // seconds
-    pool_size = 100;
+    pool_size = 1000;
     num_keys_node = 15;
 
     //Configuracion de parametros de programa que se podran ingresar mediante ./waf ...taller --<par> = valor
@@ -165,11 +191,11 @@ int main (int argc, char *argv[])
 
     //Se genera el pool de llaves
     NS_LOG_INFO("GENERATING POOL.");
-    std::vector<std::string> pool = generatePool(pool_size);
+    pool = generatePool(pool_size);
 
 
     //EN un vector se guardan las k llaves que le corresponden a cada nodo
-    std::vector<std::vector<std::string>> nodeKeys = assignKeysToNodes(pool,pool_size, numNodes, num_keys_node);
+    nodeKeys = assignKeysToNodes(pool,pool_size, numNodes, num_keys_node);
 
     //Se imprimen las llaves de cada nodo (esto se puede quitar despues)
     for (size_t i = 0; i < nodeKeys.size(); i++)
@@ -260,6 +286,9 @@ int main (int argc, char *argv[])
     std::string codedKeyIds = encodeKeyIds(pool, nodeKeys[i]);
     Simulator::Schedule (Seconds (i),&SendStuff, source, remote, codedKeyIds);
   }
+  Simulator::Schedule (Seconds (nodeContainer.GetN()),&discoveryPhaseResults);
+
+  
   
 
   
