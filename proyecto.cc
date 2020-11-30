@@ -46,21 +46,11 @@ Parámetros de consola que pueden personalizar la ejecucion del programa
 */
 
 
-#include "ns3/core-module.h"
-#include "ns3/point-to-point-module.h"
-#include "ns3/csma-module.h"
-#include "ns3/network-module.h"
-#include "ns3/applications-module.h"
-#include "ns3/mobility-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/netanim-module.h"
-#include "ns3/basic-energy-source.h"
-#include "ns3/simple-device-energy-model.h"
-#include "ns3/yans-wifi-helper.h"
-#include "ns3/ssid.h"
-#include "ns3/wifi-radio-energy-model.h"
+
 
 #include <iostream>
+#include <string>
+#include "ns3/network-module.h"
 #include "ns3/command-line.h"
 #include "ns3/config.h"
 #include "ns3/double.h"
@@ -107,6 +97,23 @@ void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny,std::string content)
   return;
 }
 
+
+std::vector<std::string> decodeKeyIds(std::string codedKeys){
+
+  std::string delimiter = ",";
+  std::vector<std::string> nodeKeys;
+  size_t pos = 0;
+  std::string token;
+  while ((pos = codedKeys.find(delimiter)) != std::string::npos) {
+      token = codedKeys.substr(0, pos);
+      //std::cout << token << std::endl;
+      nodeKeys.push_back(token);
+      codedKeys.erase(0, pos + delimiter.length());
+  }
+  return nodeKeys;
+  
+}
+
 void checkSharedKey (Ptr<Socket> socket)
 {
   uint32_t id_of_reciving_node = socket->GetNode()->GetId();
@@ -116,28 +123,20 @@ void checkSharedKey (Ptr<Socket> socket)
   packet->RemoveAllByteTags ();
   uint8_t *buffer = new uint8_t[packet->GetSize ()];
   packet->CopyData(buffer, packet->GetSize ());
-  std::string s = std::string(buffer, buffer+packet->GetSize());
+  std::string pckContent = std::string(buffer, buffer+packet->GetSize());
   NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << InetSocketAddress::ConvertFrom (from).GetIpv4 ());
-  NS_LOG_INFO ("Message Received: " << s );
-
-}
-
-/*
-std::vector<std::string> decodeKeyIds(std::string codedKeys){
-
-  std::string delimiter = ",";
-
-  size_t pos = 0;
-  std::string token;
-  while ((pos = codedKeys.find(delimiter)) != std::string::npos) {
-      token = codedKeys.substr(0, pos);
-      std::cout << token << std::endl;
-      codedKeys.erase(0, pos + delimiter.length());
+  NS_LOG_INFO ("Message Received: " << pckContent );
+  std::vector<std::string> nodeKeys = decodeKeyIds(pckContent);
+  /*
+  for (size_t i = 0; i < nodeKeys.size(); i++)
+  {
+    std::cout<<nodeKeys[i]<<" ";
   }
-  std::cout << codedKeys << std::endl;
-  
+  std::cout<<std::endl;
+  */
+
 }
-*/
+
 
 
 int getIndex(std::vector<std::string> v, std::string K)
@@ -165,8 +164,7 @@ std::string encodeKeyIds(std::vector<std::string> pool, std::vector<std::string>
   for (size_t i = 0; i < nodeKeys.size(); i++)
   {
     codedKeyIds += std::to_string(getIndex(pool, nodeKeys[i]));
-    if(i < nodeKeys.size()-1)
-      codedKeyIds +=",";
+    codedKeyIds +=",";
   }
 
   std::cout << codedKeyIds << std::endl;
