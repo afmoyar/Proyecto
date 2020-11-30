@@ -18,11 +18,21 @@
  */
 
 /*
-En este codigo se definen 3 redes adhoc inalambricas
-La red de mayor jerarquia sera netone
-Las otras dos, nettwo, netone, solo se pueden comunicar através de netone
-El numero minimo de nodos de cada red puede tener es de dos. En cada red habra almenos
-una cabeza de cluster, que se encarga de comunicar
+
+En este código se simula el proceso de definición de un esquema 
+criptográfico para la comunicación de una red de sensores inalámbrica.
+
+EL proceso tiene varias etapas:
+
+FASE DE PRE DISTRIBUCIÓN DE LLAVES: A cada nodo se le asignan un paquete de llaves
+únicas entre sí. Dos nodos pueden comunicarse entre sí solo si comparten al menos una llave.
+
+FASE DE DESCUBRIMIENTO DE LLAVES COMPARTIDAS: Cada nodo hace una transmición de broadcast para 
+saber con qué nodos puede comunicarse. COmo no todos los nodos tendrán llaves compartidas, no
+habrá enlace directo entre cada par de nodos, por ello se tiene la siguiente etapa.
+
+
+
 
 
 Parámetros de consola que pueden personalizar la ejecucion del programa
@@ -36,7 +46,19 @@ Parámetros de consola que pueden personalizar la ejecucion del programa
 */
 
 
-
+#include "ns3/core-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/csma-module.h"
+#include "ns3/network-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/netanim-module.h"
+#include "ns3/basic-energy-source.h"
+#include "ns3/simple-device-energy-model.h"
+#include "ns3/yans-wifi-helper.h"
+#include "ns3/ssid.h"
+#include "ns3/wifi-radio-energy-model.h"
 
 #include <iostream>
 #include "ns3/command-line.h"
@@ -98,6 +120,28 @@ void ReceivePacket (Ptr<Socket> socket)
     }
 }
 
+void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny)
+{
+  std::ostringstream msg; msg << "Hello World!" << '\0';
+  Ptr<Packet> p = Create<Packet> ((uint8_t*) msg.str().c_str(), msg.str().length()+1);
+  p->AddPaddingAtEnd (100);
+  sock->SendTo (p, 0, destiny);
+  return;
+}
+
+void checkSharedKey (Ptr<Socket> socket)
+{
+  Address from;
+  Ptr<Packet> packet = socket->RecvFrom (from);
+  packet->RemoveAllPacketTags ();
+  packet->RemoveAllByteTags ();
+  uint8_t *buffer = new uint8_t[packet->GetSize ()];
+  packet->CopyData(buffer, packet->GetSize ());
+  std::string s = std::string(buffer, buffer+packet->GetSize());
+  NS_LOG_INFO ("Source Received " << packet->GetSize () << " bytes from " << InetSocketAddress::ConvertFrom (from).GetIpv4 ());
+  NS_LOG_INFO ("Content " << s );
+}
+
 
 
 
@@ -147,9 +191,10 @@ int main (int argc, char *argv[])
     //EN un vector se guardan las k llaves que le corresponden a cada nodo
     std::vector<std::vector<std::string>> nodeKeys = assignKeysToNodes(pool,pool_size, numNodes, num_keys_node);
 
+    //Se imprimen las llaves de cada nodo (esto se puede quitar despues)
     for (size_t i = 0; i < nodeKeys.size(); i++)
     {
-      NS_LOG_INFO("Node 1: ");
+      NS_LOG_INFO("Node "<<i);
       for (size_t j = 0; j < nodeKeys[i].size(); j++)
       {
         NS_LOG_INFO(nodeKeys[i][j]);
@@ -157,6 +202,11 @@ int main (int argc, char *argv[])
       
     }
     
+   /////////////////////////////////////////////////////////////////////////////
+  //                                                                         //
+  //                          DESPLIEGUE DE LA RED                          //
+  //                                                                       //
+  ///////////////////////////////////////////////////////////////////////////
     //Creacion de la red
     NS_LOG_INFO("CREATING NODES.");
     NodeContainer nodeContainer;
@@ -189,6 +239,7 @@ int main (int argc, char *argv[])
     
     //La red de sensores no tiene movilidad, simplemente se configura cada nodo en una posición
     //aleatoria dentro de un rectangulo definido por x_limit y y_limit
+    NS_LOG_INFO("SETTING UP POSSITIONS OF NODES.");
     MobilityHelper mobility;
 
     std::stringstream x_rand;
@@ -204,26 +255,31 @@ int main (int argc, char *argv[])
                                     );
     mobility.Install (nodeContainer);
 
-   
+   /////////////////////////////////////////////////////////////////////////////
+  //                                                                         //
+  //             FASE DE DESCUBRIMIENTO DE LLAVES COMPARTIDAS               //
+  //                                                                       //
+  ///////////////////////////////////////////////////////////////////////////
   
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
-  //UN nodo va a estar escuchando en el puerto 80
-  Ptr<Socket> destiny = Socket::CreateSocket (nodeContainer.Get (0), tid);
-  InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
-  destiny->Bind (local);
-  destiny->SetRecvCallback (MakeCallback (&ReceivePacket));
 
+  for (uint32_t i = 0; i < nodeContainer.GetN (); ++i)
+  {
+    //Para esta etapa todos los nodos estan escuchando
+    Ptr<Socket> destiny = Socket::CreateSocket (nodeContainer.Get (i), tid);
+    InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
+    destiny->Bind (local);
+    destiny->SetRecvCallback (MakeCallback (&checkSharedKey));
+  }
+  
 
-
-  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (9 % (numNodes - 1)), tid);
-  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.50"), 80);
+  //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (0), tid);
+  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.255"), 80);
   source->SetAllowBroadcast (true);
   source->Connect (remote);
 
-
-  Simulator::ScheduleWithContext (source->GetNode ()->GetId (),
-                                  Seconds (1.0), &GenerateTraffic,
-                                  source, packetSize, numPackets, interPacketInterval);
+  Simulator::Schedule (Seconds (0.1),&SendStuff, source, remote);
   Simulator::Stop (Seconds (30));
 
   AnimationInterface pAnim ("testProyecto.xml");
