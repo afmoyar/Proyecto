@@ -266,9 +266,7 @@ int main (int argc, char *argv[])
     Ipv4AddressHelper ipAddrs;
     ipAddrs.SetBase ("192.168.0.0", "255.255.255.0");
     //cada dispositivo de red tendra direcciones 192.168.0.1, 192.168.0.2....192.168.0.254
-    ipAddrs.Assign (mainDeviceContainer);
-
-
+    Ipv4InterfaceContainer addressContainer = ipAddrs.Assign (mainDeviceContainer);
     
     //La red de sensores no tiene movilidad, simplemente se configura cada nodo en una posición
     //aleatoria dentro de un rectangulo definido por x_limit y y_limit
@@ -296,25 +294,30 @@ int main (int argc, char *argv[])
   
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
 
+  //Se ponen a escuchar a todos los nodos
   for (uint32_t i = 0; i < nodeContainer.GetN (); ++i)
   {
-    //Para esta etapa todos los nodos estan escuchando
     Ptr<Socket> destiny = Socket::CreateSocket (nodeContainer.Get (i), tid);
     InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
     destiny->Bind (local);
     destiny->SetRecvCallback (MakeCallback (&checkSharedKey));
   }
+  //Cada uno de los nodos hace una emisión de broadcast para informar a sus vecinos que llaves
+  //tiene
+  for (uint32_t i = 0; i < nodeContainer.GetN (); ++i)
+  {
+    Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (i), tid);
+    InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.255"), 80);
+    source->SetAllowBroadcast (true);
+    source->Connect (remote);
+    std::string codedKeyIds = encodeKeyIds(pool, nodeKeys[i]);
+    Simulator::Schedule (Seconds (i),&SendStuff, source, remote, codedKeyIds);
+  }
   
 
-  //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
-  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (0), tid);
-  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.255"), 80);
-  source->SetAllowBroadcast (true);
-  source->Connect (remote);
+  
 
-  encodeKeyIds(pool, nodeKeys[0]);
 
-  Simulator::Schedule (Seconds (0.1),&SendStuff, source, remote, "this is just a test");
   Simulator::Stop (Seconds (30));
 
   AnimationInterface pAnim ("testProyecto.xml");
