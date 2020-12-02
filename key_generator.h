@@ -70,16 +70,16 @@ std::vector<std::vector<std::string>> assignKeysToNodes(std::vector<std::string>
     return NodeKeys;
 }
 
-std::vector<std::string> decodeKeyIds(std::string codedKeys){
+std::vector<uint32_t> decodeKeyIds(std::string codedKeys){
 
   std::string delimiter = ",";
-  std::vector<std::string> nodeKeys;
+  std::vector<uint32_t> nodeKeys;
   size_t pos = 0;
   std::string token;
   while ((pos = codedKeys.find(delimiter)) != std::string::npos) {
       token = codedKeys.substr(0, pos);
       //std::cout << token << std::endl;
-      nodeKeys.push_back(token);
+      nodeKeys.push_back(std::stoi(token));
       codedKeys.erase(0, pos + delimiter.length());
   }
   return nodeKeys;
@@ -119,7 +119,22 @@ std::string encodeKeyIds(std::vector<std::string> pool, std::vector<std::string>
   
 }
 
+int getNodeId(std::string ipAddress){
 
+    ipAddress+=".";
+    std::string delimiter = ".";
+    std::vector<std::string> nums;
+    size_t pos = 0;
+    std::string token;
+    while ((pos = ipAddress.find(delimiter)) != std::string::npos) {
+        token = ipAddress.substr(0, pos);
+        //std::cout << token << std::endl;
+        nums.push_back(token);
+        ipAddress.erase(0, pos + delimiter.length());
+    }
+    return std::stoi(nums[nums.size()-1]);
+  
+}
 
 
 

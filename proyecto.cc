@@ -36,10 +36,11 @@ habrá enlace directo entre cada par de nodos, por ello se tiene la siguiente et
 
 
 Parámetros de consola que pueden personalizar la ejecucion del programa
-
+./waf --run scratch/proyecto --vis
 ./waf --run "scratch/proyecto --numPackets=10" --vis
 ./waf --run "scratch/proyecto --numPackets=30 --numNodes=20" --vis
 ./waf --run "scratch/proyecto --numPackets=30 --x_limit=10 --y_limit=10" --vis
+./waf --run "scratch/proyecto --numNodes=6 --x_limit=10 --y_limit=10" --vis
 ./waf --run "scratch/proyecto --numNodes=6 --pool_size=10 --num_keys_node=2" --vis
 
 
@@ -69,6 +70,7 @@ Parámetros de consola que pueden personalizar la ejecucion del programa
 #include "ns3/packet-sink-helper.h"
 #include "ns3/csma-helper.h"
 #include "ns3/netanim-module.h"
+#include "ns3/ipv4-static-routing-helper.h"
 #include "key_generator.h"
 
 using namespace ns3;
@@ -84,9 +86,15 @@ double x_limit;
 double y_limit;
 double interval;
 
-//Definicion de variables globales
+//Definicion de variables globales:
+
+//Matriz donde la fila i tiene la lista de llaves del nodo i
 std::vector<std::vector<std::string>> nodeKeys;
+//Arreglo con todas las llaves
 std::vector<std::string> pool;
+//Arreglo de duplas (nodeA_id, nodeB_id) con la información de los nodos que tienen enlaces
+//directos
+std::vector<std::pair<uint32_t,uint32_t>> directLinks;
 uint32_t direct_link_count = 0;
 
 
@@ -113,6 +121,13 @@ void checkSharedKey (Ptr<Socket> socket)
   //getting ip addres of sender node
   Address from;
   Ptr<Packet> packet = socket->RecvFrom (from);
+  Ipv4Address ipSEnder = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
+  //Converting address to a string
+  std::ostringstream stream;
+  ipSEnder.Print(stream);
+  std::string ipSenderStr =  stream.str();
+  //getting sender node id
+  uint32_t id_of_sender_node = getNodeId(ipSenderStr) -1 ;
   //preparing received packet for data extraction
   packet->RemoveAllPacketTags ();
   packet->RemoveAllByteTags ();
@@ -120,33 +135,43 @@ void checkSharedKey (Ptr<Socket> socket)
   uint8_t *buffer = new uint8_t[packet->GetSize ()];
   packet->CopyData(buffer, packet->GetSize ());
   std::string pckContent = std::string(buffer, buffer+packet->GetSize());
-  NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << InetSocketAddress::ConvertFrom (from).GetIpv4 ());
+  NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << ipSenderStr);
   NS_LOG_INFO ("Message Received: " << pckContent );
+
   //contructing the keys received
-  std::vector<std::string> keyIdsRecvd = decodeKeyIds(pckContent);
+  std::vector<uint32_t> keyIdsRecvd = decodeKeyIds(pckContent);
   //cheking for shared keys
   for (size_t i = 0; i < keyIdsRecvd.size(); i++)
   {
     //std::cout<<keyIdsRecvd[i]<<" ";
-    std::string key = pool[i];
+    std::string key = pool[keyIdsRecvd[i]];
     if(getIndex(nodeKeys[id_of_reciving_node],key)!=-1){
-      NS_LOG_INFO ("Direct link made: ");
+      NS_LOG_INFO ("Direct link made!");
       direct_link_count++;
+      //Creating new direct link
+      std::pair<uint32_t,uint32_t> newPair;
+      //pair: (sender, reciver)
+      newPair.first = id_of_sender_node;
+      newPair.second = id_of_reciving_node;
+      directLinks.push_back(newPair);
       break;
     }
-  }
-  //std::cout<<std::endl;
-  std::cout<<direct_link_count<<std::endl;
-  
+  }  
 
 }
 
 void discoveryPhaseResults(){
 
-  NS_LOG_INFO("************************************************************");
+  NS_LOG_INFO("********END OF KEY DISCOVERY PHASE *****************************");
   double totalEdges = (double)numNodes*(numNodes - 1)/(double)2;
-  NS_LOG_INFO("Of "<<totalEdges<<" direct links possible, "<<direct_link_count/2<<" where made");
-  NS_LOG_INFO("************************************************************");
+  NS_LOG_INFO("Of "<<totalEdges<<" edges, "<<direct_link_count/2<<" where made");
+  NS_LOG_INFO(direct_link_count<<" direct links made:");
+  for (size_t i = 0; i < directLinks.size(); i++)
+  {
+    NS_LOG_INFO("Node "<<directLinks[i].first<<" with node "<<directLinks[i].second);
+  }
+  
+  NS_LOG_INFO("****************************************************************");
 }
 
 
@@ -189,10 +214,17 @@ int main (int argc, char *argv[])
   //                                                                       //
   ///////////////////////////////////////////////////////////////////////////
 
+    NS_LOG_INFO("*********KEY PRE DISTRIBUTION PHASE*****************");
     //Se genera el pool de llaves
     NS_LOG_INFO("GENERATING POOL.");
     pool = generatePool(pool_size);
-
+    /*
+    Codigo para imprimir todas las llaves, se deja comentado porque pueden ser muchas llaves
+    for (size_t j = 0; j < pool_size; j++)
+          {
+            NS_LOG_INFO(j<<": "<<pool[j]);
+          }
+    */
 
     //EN un vector se guardan las k llaves que le corresponden a cada nodo
     nodeKeys = assignKeysToNodes(pool,pool_size, numNodes, num_keys_node);
@@ -207,12 +239,14 @@ int main (int argc, char *argv[])
       }
       
     }
-    
+    NS_LOG_INFO("********* END OF KEY PRE DISTRIBUTION PHASE*****************");
    /////////////////////////////////////////////////////////////////////////////
   //                                                                         //
   //                          DESPLIEGUE DE LA RED                          //
   //                                                                       //
   ///////////////////////////////////////////////////////////////////////////
+
+  NS_LOG_INFO("********* KEY DISCOVERY PHASE*****************");
     //Creacion de la red
     NS_LOG_INFO("CREATING NODES.");
     NodeContainer nodeContainer;
@@ -240,6 +274,7 @@ int main (int argc, char *argv[])
     ipAddrs.SetBase ("192.168.0.0", "255.255.255.0");
     //cada dispositivo de red tendra direcciones 192.168.0.1, 192.168.0.2....192.168.0.254
     Ipv4InterfaceContainer addressContainer = ipAddrs.Assign (mainDeviceContainer);
+    
     
     //La red de sensores no tiene movilidad, simplemente se configura cada nodo en una posición
     //aleatoria dentro de un rectangulo definido por x_limit y y_limit
@@ -277,6 +312,7 @@ int main (int argc, char *argv[])
   }
   //Cada uno de los nodos hace una emisión de broadcast para informar a sus vecinos que llaves
   //tiene
+
   for (uint32_t i = 0; i < nodeContainer.GetN (); ++i)
   {
     Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (i), tid);
@@ -287,11 +323,6 @@ int main (int argc, char *argv[])
     Simulator::Schedule (Seconds (i),&SendStuff, source, remote, codedKeyIds);
   }
   Simulator::Schedule (Seconds (nodeContainer.GetN()),&discoveryPhaseResults);
-
-  
-  
-
-  
 
 
   Simulator::Stop (Seconds (30));
