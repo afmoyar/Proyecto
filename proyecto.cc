@@ -18,23 +18,14 @@
  */
 
 /*
-
 En este código se simula el proceso de definición de un esquema 
 criptográfico para la comunicación de una red de sensores inalámbrica.
-
 EL proceso tiene varias etapas:
-
 FASE DE PRE DISTRIBUCIÓN DE LLAVES: A cada nodo se le asignan un paquete de llaves
 únicas entre sí. Dos nodos pueden comunicarse entre sí solo si comparten al menos una llave.
-
 FASE DE DESCUBRIMIENTO DE LLAVES COMPARTIDAS: Cada nodo hace una transmición de broadcast para 
 saber con qué nodos puede comunicarse. COmo no todos los nodos tendrán llaves compartidas, no
 habrá enlace directo entre cada par de nodos, por ello se tiene la siguiente etapa.
-
-
-
-
-
 Parámetros de consola que pueden personalizar la ejecucion del programa
 ./waf --run scratch/proyecto --vis
 ./waf --run "scratch/proyecto --numPackets=10" --vis
@@ -42,12 +33,10 @@ Parámetros de consola que pueden personalizar la ejecucion del programa
 ./waf --run "scratch/proyecto --numPackets=30 --x_limit=10 --y_limit=10" --vis
 ./waf --run "scratch/proyecto --numNodes=6 --x_limit=10 --y_limit=10" --vis
 ./waf --run "scratch/proyecto --numNodes=6 --pool_size=10 --num_keys_node=2" --vis
-
-
 */
 
-
-
+#include "ns3/ipv4-global-routing-helper.h"
+#include "ns3/point-to-point-module.h"
 
 #include <iostream>
 #include <string>
@@ -85,7 +74,8 @@ uint32_t num_keys_node;
 double x_limit;
 double y_limit;
 double interval;
-
+NetDeviceContainer mainDeviceContainer;
+NodeContainer nodeContainer;
 //Definicion de variables globales:
 
 //Matriz donde la fila i tiene la lista de llaves del nodo i
@@ -166,10 +156,35 @@ void discoveryPhaseResults(){
   double totalEdges = (double)numNodes*(numNodes - 1)/(double)2;
   NS_LOG_INFO("Of "<<totalEdges<<" edges, "<<direct_link_count/2<<" where made");
   NS_LOG_INFO(direct_link_count<<" direct links made:");
+  int j = 0;
   for (size_t i = 0; i < directLinks.size(); i++)
   {
-    NS_LOG_INFO("Node "<<directLinks[i].first<<" with node "<<directLinks[i].second);
+    NS_LOG_INFO("Node "<<directLinks[i].first<<" with node "<<directLinks[i].second); 
+    NodeContainer tmp = NodeContainer (nodeContainer.Get (directLinks[i].first), nodeContainer.Get (directLinks[i].second));
+    PointToPointHelper p2p;
+    NS_LOG_INFO("***************************Setting p2p*************************************");
+    p2p.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
+    p2p.SetChannelAttribute ("Delay", StringValue ("2ms"));
+    mainDeviceContainer = p2p.Install (tmp);
+    
+    // Later, we add IP addresses.
+    Ipv4AddressHelper ipv4;
+    if(i>255){
+       j++;
+       }
+  
+    int randNum = rand()%(250-3 + 1) + 3;
+    std::string istr = std::to_string(i);
+    std::string jstr = std::to_string(j);
+    std::string rstr = std::to_string(randNum);
+    
+    //std::string ipstr ="10.1."+istr+"."+rstr;
+    std::string ipstr ="10."+jstr+"1."+istr+".0";
+    NS_LOG_INFO ("Assign IP Addresses. " << ipstr);
+    ipv4.SetBase (ns3::Ipv4Address(ipstr.c_str()), "255.255.255.255");
+    Ipv4InterfaceContainer i0i2 = ipv4.Assign (mainDeviceContainer);
   }
+  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
   
   NS_LOG_INFO("****************************************************************");
 }
@@ -249,7 +264,7 @@ int main (int argc, char *argv[])
   NS_LOG_INFO("********* KEY DISCOVERY PHASE*****************");
     //Creacion de la red
     NS_LOG_INFO("CREATING NODES.");
-    NodeContainer nodeContainer;
+    //NodeContainer nodeContainer;
     nodeContainer.Create(numNodes);
 
  
@@ -262,7 +277,8 @@ int main (int argc, char *argv[])
     YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default ();
     YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default ();
     wifiPhy.SetChannel (wifiChannel.Create ());
-    NetDeviceContainer mainDeviceContainer = wifi.Install (wifiPhy, mac, nodeContainer);
+    //NetDeviceContainer mainDeviceContainer = wifi.Install (wifiPhy, mac, nodeContainer);
+    mainDeviceContainer = wifi.Install (wifiPhy, mac, nodeContainer);
 
     //Intalacion de pila de protocolos a los dispositivos de red
     InternetStackHelper internet;
