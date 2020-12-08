@@ -66,7 +66,6 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("Proyecto");
 //DEfinicion de parametros que se pueden modificar por consola
-uint32_t packetSize; // bytes
 uint32_t numPackets;
 uint32_t numNodes;
 uint32_t pool_size;
@@ -85,8 +84,13 @@ std::vector<std::string> pool;
 //Arreglo de duplas (nodeA_id, nodeB_id) con la información de los nodos que tienen enlaces
 //directos
 std::vector<std::pair<uint32_t,uint32_t>> directLinks;
-std::map<uint32_t, std::vector<uint32_t>> linksMap;
+//tabla hash donde las llaves son cada uno de los id de los nodos y los valores la lista de 
+//nodos con conexiones
+std::map<uint32_t, std::vector<int>> linksMap;
+//lista de direcciones ip
+Ipv4InterfaceContainer addressContainer;
 uint32_t direct_link_count = 0;
+double simTime = 0;
 
 
 
@@ -146,9 +150,9 @@ void checkSharedKey (Ptr<Socket> socket)
       newPair.second = id_of_reciving_node;
       directLinks.push_back(newPair);
       if ( linksMap.find(id_of_reciving_node) == linksMap.end() ){
-        std::pair<uint32_t,std::vector<uint32_t>> newPair2;
+        std::pair<uint32_t,std::vector<int>> newPair2;
         newPair2.first = id_of_reciving_node;
-        newPair2.second = std::vector<uint32_t>();
+        newPair2.second = std::vector<int>();
         linksMap.insert(newPair2);
         linksMap.find(id_of_reciving_node)->second.push_back(id_of_sender_node);
       } else{
@@ -204,16 +208,21 @@ void discoveryPhaseResults(){
   //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
   
 NS_LOG_INFO("****************************************************************");
-/*
-std::map<uint32_t, std::vector<uint32_t>>::iterator it;
+
+std::map<uint32_t, std::vector<int>>::iterator it;
 for ( it = linksMap.begin(); it != linksMap.end(); it++ )
 {
     std::cout << it->first  // string (key)
-              << ":"
-              << it->second.size()   // string's value 
-              << std::endl ;
+              << ":" ;
+    for (size_t i = 0; i < it->second.size(); i++)
+    {
+      std::cout << it->second[i]  // string (key)
+              << "," ;
+    }
+    std::cout <<std::endl;
+    
 }
-*/
+
 }
 
 
@@ -242,6 +251,46 @@ void receive (Ptr<Socket> socket)
 
 }
 
+void updateListeningFUnction(std::vector<Ptr<Socket>> listening_sockets){
+  //se cambia la función que es llamada al recibir un paquete
+  for (uint32_t i = 0; i < listening_sockets.size(); ++i)
+  {
+    Ptr<Socket> destiny = listening_sockets[i];
+    destiny->SetRecvCallback (MakeCallback (&receive));
+
+  }
+}
+
+void sendSecure(){
+  NS_LOG_INFO ("Enter message: ");
+  std::string message;
+  std::cin >> message;
+  NS_LOG_INFO ("Enter sender node id: ");
+  int sender;
+  std::cin >> sender;
+  NS_LOG_INFO ("Enter destiny node id: ");
+  int destiny;
+  std::cin >> destiny;
+  std::vector<int> validIds = linksMap.find(destiny)->second;
+  if(getIndex(validIds,sender)==-1){
+    NS_LOG_INFO ("These nodes dont have direct links");
+    return;
+  }
+  Ipv4Address destineyAddress =  addressContainer.GetAddress(destiny,0);
+  //Converting address to a string
+  std::ostringstream stream;
+  destineyAddress.Print(stream);
+  std::string ipSenderStr =  stream.str();
+  NS_LOG_INFO ("sending message to "<<ipSenderStr);
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (sender), tid);
+  InetSocketAddress remote = InetSocketAddress (destineyAddress, 80);
+  source->SetAllowBroadcast (true);
+  source->Connect (remote);
+  simTime=simTime+0.3;
+  Simulator::Schedule (Seconds (simTime),&SendStuff, source, remote, message);
+  //NS_LOG_INFO (sender);
+}
 
 int main (int argc, char *argv[])
 {
@@ -250,7 +299,6 @@ int main (int argc, char *argv[])
 
     //Definicion de valores por defecto de variables que se pueden modificar como parametros del
     //programa
-    packetSize = 1000; // bytes
     numPackets = 10;
     numNodes = 60;
     x_limit = 100;
@@ -262,7 +310,6 @@ int main (int argc, char *argv[])
     //Configuracion de parametros de programa que se podran ingresar mediante ./waf ...taller --<par> = valor
     
     CommandLine cmd;
-    cmd.AddValue ("packetSize", "size of application packet sent", packetSize);
     cmd.AddValue ("numPackets", "number of packets generated", numPackets);
     cmd.AddValue ("interval", "seconds betwen one package and another", interval);
     cmd.AddValue ("numNodes", "number of nodes for main network", numNodes);
@@ -341,7 +388,7 @@ int main (int argc, char *argv[])
     Ipv4AddressHelper ipAddrs;
     ipAddrs.SetBase ("192.168.0.0", "255.255.255.0");
     //cada dispositivo de red tendra direcciones 192.168.0.1, 192.168.0.2....192.168.0.254
-    Ipv4InterfaceContainer addressContainer = ipAddrs.Assign (mainDeviceContainer);
+    addressContainer = ipAddrs.Assign (mainDeviceContainer);
     
     
     //La red de sensores no tiene movilidad, simplemente se configura cada nodo en una posición
@@ -389,9 +436,11 @@ int main (int argc, char *argv[])
     source->SetAllowBroadcast (true);
     source->Connect (remote);
     std::string codedKeyIds = encodeKeyIds(pool, nodeKeys[i]);
+    simTime = i;
     Simulator::Schedule (Seconds (i),&SendStuff, source, remote, codedKeyIds);
   }
-  Simulator::Schedule (Seconds (nodeContainer.GetN()),&discoveryPhaseResults);
+  simTime += 1;
+  Simulator::Schedule (Seconds (simTime),&discoveryPhaseResults);
 
  /////////////////////////////////////////////////////////////////////////////
   //                                                                         //
@@ -399,28 +448,26 @@ int main (int argc, char *argv[])
   //                                                                       //
   ///////////////////////////////////////////////////////////////////////////
 
-  //se cambia la función que es llamada al recibir un paquete
-  for (uint32_t i = 0; i < listening_sockets.size(); ++i)
+  NS_LOG_INFO("NOW ITS TIME TO SEND "<<numPackets<<"BETWEEN NODES WITH DIRECT LINKS");
+  simTime += 0.1;
+  Simulator::Schedule (Seconds (simTime),&updateListeningFUnction, listening_sockets);
+  for (size_t i = 0; i < 1; i++)
   {
-    Ptr<Socket> destiny = listening_sockets[i];
-    destiny->SetRecvCallback (MakeCallback (&receive));
-
+    simTime += 0.1;
+    Simulator::Schedule (Seconds (simTime),&sendSecure);
   }
+  
+  
+  
 
-  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (0), tid);
-  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.255"), 80);
-  source->SetAllowBroadcast (true);
-  source->Connect (remote);
-  std::string message = "this is just a test";
-  Simulator::Schedule (Seconds (nodeContainer.GetN()+2),&SendStuff, source, remote, message);
-    
+  Simulator::Run ();
 
   Simulator::Stop (Seconds (30));
 
   AnimationInterface pAnim ("testProyecto.xml");
 
 
-  Simulator::Run ();
+  
   Simulator::Destroy ();
 
 
