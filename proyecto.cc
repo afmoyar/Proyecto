@@ -85,6 +85,7 @@ std::vector<std::string> pool;
 //Arreglo de duplas (nodeA_id, nodeB_id) con la información de los nodos que tienen enlaces
 //directos
 std::vector<std::pair<uint32_t,uint32_t>> directLinks;
+std::map<uint32_t, std::vector<uint32_t>> linksMap;
 uint32_t direct_link_count = 0;
 
 
@@ -144,6 +145,17 @@ void checkSharedKey (Ptr<Socket> socket)
       newPair.first = id_of_sender_node;
       newPair.second = id_of_reciving_node;
       directLinks.push_back(newPair);
+      if ( linksMap.find(id_of_reciving_node) == linksMap.end() ){
+        std::pair<uint32_t,std::vector<uint32_t>> newPair2;
+        newPair2.first = id_of_reciving_node;
+        newPair2.second = std::vector<uint32_t>();
+        linksMap.insert(newPair2);
+        linksMap.find(id_of_reciving_node)->second.push_back(id_of_sender_node);
+      } else{
+        linksMap.find(id_of_reciving_node)->second.push_back(id_of_sender_node);
+    
+      }
+      
       break;
     }
   }  
@@ -156,10 +168,12 @@ void discoveryPhaseResults(){
   double totalEdges = (double)numNodes*(numNodes - 1)/(double)2;
   NS_LOG_INFO("Of "<<totalEdges<<" edges, "<<direct_link_count/2<<" where made");
   NS_LOG_INFO(direct_link_count<<" direct links made:");
-  int j = 0;
+  //int j = 0;
   for (size_t i = 0; i < directLinks.size(); i++)
   {
-    NS_LOG_INFO("Node "<<directLinks[i].first<<" with node "<<directLinks[i].second); 
+    NS_LOG_INFO("Node "<<directLinks[i].first<<" with node "<<directLinks[i].second);
+     
+    /*
     NodeContainer tmp = NodeContainer (nodeContainer.Get (directLinks[i].first), nodeContainer.Get (directLinks[i].second));
     PointToPointHelper p2p;
     NS_LOG_INFO("***************************Setting p2p*************************************");
@@ -183,12 +197,50 @@ void discoveryPhaseResults(){
     NS_LOG_INFO ("Assign IP Addresses. " << ipstr);
     ipv4.SetBase (ns3::Ipv4Address(ipstr.c_str()), "255.255.255.255");
     Ipv4InterfaceContainer i0i2 = ipv4.Assign (mainDeviceContainer);
-  }
-  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+   */
+    
   
-  NS_LOG_INFO("****************************************************************");
+  }
+  //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+  
+NS_LOG_INFO("****************************************************************");
+/*
+std::map<uint32_t, std::vector<uint32_t>>::iterator it;
+for ( it = linksMap.begin(); it != linksMap.end(); it++ )
+{
+    std::cout << it->first  // string (key)
+              << ":"
+              << it->second.size()   // string's value 
+              << std::endl ;
+}
+*/
 }
 
+
+void receive (Ptr<Socket> socket)
+{
+  NS_LOG_INFO("This is a secure chanel");
+  uint32_t id_of_reciving_node = socket->GetNode()->GetId();
+  //getting ip addres of sender node
+  Address from;
+  Ptr<Packet> packet = socket->RecvFrom (from);
+  Ipv4Address ipSEnder = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
+  //Converting address to a string
+  std::ostringstream stream;
+  ipSEnder.Print(stream);
+  std::string ipSenderStr =  stream.str();
+  //preparing received packet for data extraction
+  packet->RemoveAllPacketTags ();
+  packet->RemoveAllByteTags ();
+  //Extraction of packet content
+  uint8_t *buffer = new uint8_t[packet->GetSize ()];
+  packet->CopyData(buffer, packet->GetSize ());
+  std::string pckContent = std::string(buffer, buffer+packet->GetSize());
+  NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << ipSenderStr);
+  NS_LOG_INFO ("Message Received: " << pckContent );
+
+
+}
 
 
 int main (int argc, char *argv[])
@@ -317,7 +369,7 @@ int main (int argc, char *argv[])
   ///////////////////////////////////////////////////////////////////////////
   
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
-
+  std::vector<Ptr<Socket>> listening_sockets;
   //Se ponen a escuchar a todos los nodos
   for (uint32_t i = 0; i < nodeContainer.GetN (); ++i)
   {
@@ -325,6 +377,7 @@ int main (int argc, char *argv[])
     InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
     destiny->Bind (local);
     destiny->SetRecvCallback (MakeCallback (&checkSharedKey));
+    listening_sockets.push_back(destiny);
   }
   //Cada uno de los nodos hace una emisión de broadcast para informar a sus vecinos que llaves
   //tiene
@@ -340,6 +393,27 @@ int main (int argc, char *argv[])
   }
   Simulator::Schedule (Seconds (nodeContainer.GetN()),&discoveryPhaseResults);
 
+ /////////////////////////////////////////////////////////////////////////////
+  //                                                                         //
+  //             Pruebas entre nodos con enlaces directos                   //
+  //                                                                       //
+  ///////////////////////////////////////////////////////////////////////////
+
+  //se cambia la función que es llamada al recibir un paquete
+  for (uint32_t i = 0; i < listening_sockets.size(); ++i)
+  {
+    Ptr<Socket> destiny = listening_sockets[i];
+    destiny->SetRecvCallback (MakeCallback (&receive));
+
+  }
+
+  Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (0), tid);
+  InetSocketAddress remote = InetSocketAddress (Ipv4Address ("192.168.0.255"), 80);
+  source->SetAllowBroadcast (true);
+  source->Connect (remote);
+  std::string message = "this is just a test";
+  Simulator::Schedule (Seconds (nodeContainer.GetN()+2),&SendStuff, source, remote, message);
+    
 
   Simulator::Stop (Seconds (30));
 
