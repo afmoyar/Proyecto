@@ -72,11 +72,11 @@ uint32_t pool_size;
 uint32_t num_keys_node;
 double x_limit;
 double y_limit;
-double interval;
-NetDeviceContainer mainDeviceContainer;
-NodeContainer nodeContainer;
+
 //Definicion de variables globales:
 
+NetDeviceContainer mainDeviceContainer;
+NodeContainer nodeContainer;
 //Matriz donde la fila i tiene la lista de llaves del nodo i
 std::vector<std::vector<std::string>> nodeKeys;
 //Arreglo con todas las llaves
@@ -97,12 +97,12 @@ double simTime = 0;
 
 void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny,std::string content)
 {
-  //Prepare message to send
+  //Preparacion del mensaje que se va a enviar
   std::ostringstream msg; msg << content << '\0';
-  //Create packet
+  //Creacion del paquete
   Ptr<Packet> p = Create<Packet> ((uint8_t*) msg.str().c_str(), msg.str().length()+1);
   p->AddPaddingAtEnd (100);
-  //Send packet
+  //ENvio del paquete
   sock->SendTo (p, 0, destiny);
   return;
 }
@@ -113,49 +113,53 @@ void SendStuff (Ptr<Socket> sock, InetSocketAddress destiny,std::string content)
 void checkSharedKey (Ptr<Socket> socket)
 {
   uint32_t id_of_reciving_node = socket->GetNode()->GetId();
-  //getting ip addres of sender node
+  ////ACcediendo a direccion ip del nodo que envia
   Address from;
   Ptr<Packet> packet = socket->RecvFrom (from);
   Ipv4Address ipSEnder = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
-  //Converting address to a string
+  //Convirtiendo dirrección a string
   std::ostringstream stream;
   ipSEnder.Print(stream);
   std::string ipSenderStr =  stream.str();
-  //getting sender node id
+  //se obtiene el id del nodo que envía
   uint32_t id_of_sender_node = getNodeId(ipSenderStr) -1 ;
-  //preparing received packet for data extraction
+  //preparando el paquete recibido para extracción de datos
   packet->RemoveAllPacketTags ();
   packet->RemoveAllByteTags ();
-  //Extraction of packet content
+  //Extracción de datos del paqute
   uint8_t *buffer = new uint8_t[packet->GetSize ()];
   packet->CopyData(buffer, packet->GetSize ());
   std::string pckContent = std::string(buffer, buffer+packet->GetSize());
   NS_LOG_INFO("Node "<<id_of_reciving_node<<" received a message from " << ipSenderStr);
   NS_LOG_INFO ("Message Received: " << pckContent );
 
-  //contructing the keys received
+  //Arreglo con los ids de las llaves recibidas
   std::vector<uint32_t> keyIdsRecvd = decodeKeyIds(pckContent);
-  //cheking for shared keys
+  //Se verifica si se comparten llaves
   for (size_t i = 0; i < keyIdsRecvd.size(); i++)
   {
-    //std::cout<<keyIdsRecvd[i]<<" ";
+    
     std::string key = pool[keyIdsRecvd[i]];
     if(getIndex(nodeKeys[id_of_reciving_node],key)!=-1){
       NS_LOG_INFO ("Direct link made!");
       direct_link_count++;
-      //Creating new direct link
+      //Creando enlace directo
       std::pair<uint32_t,uint32_t> newPair;
       //pair: (sender, reciver)
       newPair.first = id_of_sender_node;
       newPair.second = id_of_reciving_node;
       directLinks.push_back(newPair);
+      //Verificar que id_of_reciving_node exista como llave en linksMap
       if ( linksMap.find(id_of_reciving_node) == linksMap.end() ){
+        //SI no, se agrega la nueva llave y una lista asociada a ella
         std::pair<uint32_t,std::vector<int>> newPair2;
         newPair2.first = id_of_reciving_node;
         newPair2.second = std::vector<int>();
         linksMap.insert(newPair2);
+        //Agregando id_of_sender_node A la lista creada
         linksMap.find(id_of_reciving_node)->second.push_back(id_of_sender_node);
       } else{
+        //si la llave existe, añadir id_of_sender_node a su lista
         linksMap.find(id_of_reciving_node)->second.push_back(id_of_sender_node);
     
       }
@@ -172,43 +176,18 @@ void discoveryPhaseResults(){
   double totalEdges = (double)numNodes*(numNodes - 1)/(double)2;
   NS_LOG_INFO("Of "<<totalEdges<<" edges, "<<direct_link_count/2<<" where made");
   NS_LOG_INFO(direct_link_count<<" direct links made:");
-  //int j = 0;
+
   for (size_t i = 0; i < directLinks.size(); i++)
   {
     NS_LOG_INFO("Node "<<directLinks[i].first<<" with node "<<directLinks[i].second);
      
-    /*
-    NodeContainer tmp = NodeContainer (nodeContainer.Get (directLinks[i].first), nodeContainer.Get (directLinks[i].second));
-    PointToPointHelper p2p;
-    NS_LOG_INFO("***************************Setting p2p*************************************");
-    p2p.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
-    p2p.SetChannelAttribute ("Delay", StringValue ("2ms"));
-    mainDeviceContainer = p2p.Install (tmp);
-    
-    // Later, we add IP addresses.
-    Ipv4AddressHelper ipv4;
-    if(i>255){
-       j++;
-       }
-  
-    int randNum = rand()%(250-3 + 1) + 3;
-    std::string istr = std::to_string(i);
-    std::string jstr = std::to_string(j);
-    std::string rstr = std::to_string(randNum);
-    
-    //std::string ipstr ="10.1."+istr+"."+rstr;
-    std::string ipstr ="10."+jstr+"1."+istr+".0";
-    NS_LOG_INFO ("Assign IP Addresses. " << ipstr);
-    ipv4.SetBase (ns3::Ipv4Address(ipstr.c_str()), "255.255.255.255");
-    Ipv4InterfaceContainer i0i2 = ipv4.Assign (mainDeviceContainer);
-   */
-    
-  
   }
-  //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+  
   
 NS_LOG_INFO("****************************************************************");
 
+/*
+//Impresión del mapa
 std::map<uint32_t, std::vector<int>>::iterator it;
 for ( it = linksMap.begin(); it != linksMap.end(); it++ )
 {
@@ -222,7 +201,7 @@ for ( it = linksMap.begin(); it != linksMap.end(); it++ )
     std::cout <<std::endl;
     
 }
-
+*/
 }
 
 
@@ -230,18 +209,18 @@ void receive (Ptr<Socket> socket)
 {
   NS_LOG_INFO("This is a secure chanel");
   uint32_t id_of_reciving_node = socket->GetNode()->GetId();
-  //getting ip addres of sender node
+  //Accediendo a dirección ip del nodo que envia
   Address from;
   Ptr<Packet> packet = socket->RecvFrom (from);
   Ipv4Address ipSEnder = InetSocketAddress::ConvertFrom (from).GetIpv4 ();
-  //Converting address to a string
+  //COnvirtiendo a string
   std::ostringstream stream;
   ipSEnder.Print(stream);
   std::string ipSenderStr =  stream.str();
-  //preparing received packet for data extraction
+  //Preparando paquetes recibidos para extracción de contenido
   packet->RemoveAllPacketTags ();
   packet->RemoveAllByteTags ();
-  //Extraction of packet content
+  //Extracción de contenido del paquete
   uint8_t *buffer = new uint8_t[packet->GetSize ()];
   packet->CopyData(buffer, packet->GetSize ());
   std::string pckContent = std::string(buffer, buffer+packet->GetSize());
@@ -263,10 +242,13 @@ void updateListeningFUnction(std::vector<Ptr<Socket>> listening_sockets){
 }
 
 void sendSecure(){
+  //Obteniendo mensaje por consola
   NS_LOG_INFO ("Enter message: ");
   std::string message;
   std::cin >> message;
   uint32_t sender;
+  
+  //Obeniendo  id del nodo que envia por consola
   while(true){
     NS_LOG_INFO ("Enter sender node id: ");
     std::cin >> sender;
@@ -276,7 +258,7 @@ void sendSecure(){
       NS_LOG_INFO ("Id not valid");
   }
   
-  
+  //Obeniendo  id del nodo destino por consola
   uint32_t destiny;
   while(true){
     NS_LOG_INFO ("Enter destiny node id: ");
@@ -286,18 +268,21 @@ void sendSecure(){
     else
       NS_LOG_INFO ("Id not valid");
   }
-  
+  //Verifica si es posible comuniciacion segura entre nodos
   std::vector<int> validIds = linksMap.find(destiny)->second;
   if(getIndex(validIds,sender)==-1){
     NS_LOG_INFO ("These nodes dont have direct links");
     return;
   }
+  //Obtiendo direccion ip de nodo destino
   Ipv4Address destineyAddress =  addressContainer.GetAddress(destiny,0);
-  //Converting address to a string
+  //Convirtiendo ip a string
   std::ostringstream stream;
   destineyAddress.Print(stream);
   std::string ipSenderStr =  stream.str();
+
   NS_LOG_INFO ("sending message to "<<ipSenderStr<<" after all packets are scheduled");
+  //ENviando mensaje
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
   Ptr<Socket> source = Socket::CreateSocket (nodeContainer.Get (sender), tid);
   InetSocketAddress remote = InetSocketAddress (destineyAddress, 80);
@@ -316,11 +301,10 @@ int main (int argc, char *argv[])
 
     //Definicion de valores por defecto de variables que se pueden modificar como parametros del
     //programa
-    numPackets = 2;
+    numPackets = 1;
     numNodes = 60;
     x_limit = 100;
     y_limit = 100;
-    interval = 1.0; // seconds
     pool_size = 1000;
     num_keys_node = 15;
 
@@ -328,7 +312,6 @@ int main (int argc, char *argv[])
     
     CommandLine cmd;
     cmd.AddValue ("numPackets", "number of packets generated", numPackets);
-    cmd.AddValue ("interval", "seconds betwen one package and another", interval);
     cmd.AddValue ("numNodes", "number of nodes for main network", numNodes);
     cmd.AddValue ("x_limit", "width of rectangle where nodes are going to be placed", x_limit);
     cmd.AddValue ("y_limit", "height of rectangle where nodes are going to be placed", y_limit);
@@ -337,7 +320,6 @@ int main (int argc, char *argv[])
     cmd.Parse (argc, argv);
 
 
-    Time interPacketInterval = Seconds (interval);
 
     ///////////////////////////////////////////////////////////////////////////
   //                                                                         //
